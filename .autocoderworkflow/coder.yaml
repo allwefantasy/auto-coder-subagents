@@ -1,0 +1,90 @@
+apiVersion: autocoder/v1
+kind: SubagentWorkflow
+metadata:
+  name: coder
+  description: "从上下文检索到代码生成的端到端工作流"
+spec:
+  globals:
+    model: v3_chat            # 默认模型，可被 agent 局部覆盖
+    product_mode: lite        # 默认产品模式    
+    include_rules: false      # 是否在 SdkRunner 中加入规则上下文
+
+  vars:                       # 可选：全局变量，供模板引用
+    project_type: "*"
+
+  conversation:               # 会话共享策略（全局）
+    default_action: resume    # resume | new | continue
+
+  attempt:                    # AttemptCompletion 返回契约（全局）
+    format: text              # json | text    
+
+  agents:                     # 代理集合：每个代理都是一次运行器配置（本设计用 SdkRunner）
+    - id: context
+      path: contexer.md       # 全路径为 ./.autocoderagents/context.md
+      runner: terminal        # 类型 sdk/terminal
+
+    - id: code
+      path: coder.md           # 全路径为 ./.autocoderagents/code.md
+      runner: terminal        # 类型 sdk/terminal
+
+    - id: review
+      path: reviewer.md         # 全路径为 ./.autocoderagents/reviewer  .md
+      runner: terminal        # 类型 sdk/terminal
+
+  steps:                      # 有向无环依赖（DAG），按拓扑顺序执行
+    - id: gather_context
+      agent: context
+      replicas: 2             # 并行执行2个副本，提高上下文发现的覆盖率
+      conversation:           # 仅保留 action，可选：conversation_id 支持模板
+        action: new
+      with:                   # 传给 TerminalRunner 的输入，将作为 AgenticEditRequest.user_input
+        user_input: |
+          ${vars.query}
+          ---
+          [[REMINDER: You are in context discovery mode. Analyze the request above to identify relevant files, but DO NOT implement the request. Focus on thorough file discovery and understanding the codebase context.
+
+          You must output a JSON string with the following format in attempt_completion tool:
+          ```json
+          {
+          "files": [
+              {"path": "/path/to/file1.py", "operation": "MODIFY"},
+              {"path": "/path/to/file2.md", "operation": "REFERENCE"},
+              {"path": "/path/to/new_file.txt", "operation": "ADD"},
+              {"path": "/path/to/old_file.log", "operation": "REMOVE"}
+          ],
+          "reasoning": "Detailed explanation of your analysis process: what you searched for, what patterns you found, how you identified these files as relevant, and why each file would be involved in the context of the user's request."
+          }
+          ```
+          Never stop unless you think you have found the enough files to satisfy the user's request.
+          ]]
+      outputs:                # 将 AttemptCompletion 映射为结构化输出，供后续 step 引用
+        attempt_raw: "${attempt_result}"
+        conversation_id: "${conversation_id}"
+
+    - id: write_code
+      needs: [gather_context] 
+      agent: code
+      conversation:
+        action: continue
+        # conversation_id: "${steps.gather_context.outputs.conversation_id}"
+      with:
+        user_input: |
+          基于这些文件进行代码编辑：${steps.gather_context.outputs.attempt_raw}
+          这是用户原始的需求：
+
+          ${vars.query}
+
+      outputs:
+        attempt_raw: "${attempt_result}"
+        conversation_id: "${conversation_id}"
+    - id: review_code
+      needs: [write_code]
+      agent: review
+      conversation:
+        action: continue
+      with:
+        user_input: |          
+          帮我 reivew 下当前代码，是否符合设计预期          
+      outputs:
+        attempt_raw: "${attempt_result}"
+        conversation_id: "${conversation_id}"     

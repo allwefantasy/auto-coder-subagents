@@ -1,0 +1,39 @@
+apiVersion: autocoder/v1
+kind: SubagentWorkflow
+metadata:
+  name: coder
+  description: "从上下文检索到代码生成的端到端工作流"
+spec:
+  globals:
+    model: v3_chat            # 默认模型，可被 agent 局部覆盖
+    product_mode: lite        # 默认产品模式    
+    include_rules: false      # 是否在 SdkRunner 中加入规则上下文
+
+  vars:                       # 可选：全局变量，供模板引用
+    project_type: "*"
+
+  conversation:               # 会话共享策略（全局）
+    default_action: resume    # resume | new | continue
+
+  attempt:                    # AttemptCompletion 返回契约（全局）
+    format: text              # json | text    
+
+  agents:                     # 代理集合：每个代理都是一次运行器配置（本设计用 SdkRunner）
+    - id: tester
+      path: tester.md       # 全路径为 ./.autocoderagents/context.md
+      runner: terminal        # 类型 sdk/terminal
+
+  steps:                      # 有向无环依赖（DAG），按拓扑顺序执行
+    - id: test
+      agent: tester
+      replicas: 1             # 并行执行2个副本，提高上下文发现的覆盖率
+      conversation:           # 仅保留 action，可选：conversation_id 支持模板
+        action: new
+      with:                   # 传给 TerminalRunner 的输入，将作为 AgenticEditRequest.user_input
+        user_input: |
+          ${vars.query}          
+          
+      outputs:                # 将 AttemptCompletion 映射为结构化输出，供后续 step 引用
+        attempt_raw: "${attempt_result}"
+        conversation_id: "${conversation_id}"
+       
