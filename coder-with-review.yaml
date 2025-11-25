@@ -5,7 +5,7 @@ metadata:
   description: "从上下文检索到代码生成的端到端工作流"
 spec:
   globals:
-    model: v3_chat            # 默认模型，可被 agent 局部覆盖
+    model: "volcengine/deepseek-v3-1-terminus"            # 默认模型，可被 agent 局部覆盖
     product_mode: lite        # 默认产品模式    
     include_rules: false      # 是否在 SdkRunner 中加入规则上下文
 
@@ -69,18 +69,15 @@ spec:
       needs: [gather_context]
       agent: design
       conversation:
-        action: new
+        action: continue
       with:
-        user_input: |          
-          realated_files：${steps.gather_context.outputs.attempt_raw}
-          ---
-          ${vars.query}    
-
-          通过阅读前面的相关文件以及做对项目做相应的探索，先给一个代码修改方案。          
+        user_input: |                      
+          通过阅读前面的相关文件以及做对项目做相应的探索，先给一个代码修改方案，注意，不要真修改代码，只是给出修改方案。          
       outputs:
         attempt_raw: "${attempt_result}"
         conversation_id: "${conversation_id}"
-
+    ## realated_files：${steps.gather_context.outputs.attempt_raw}
+    ## ---
     ## 注意，只给出代码修改方案，但不要使用 write_to_file 或者 replace_in_file 等工具实际代码.
     ## 探索项目后，做出的方案，需要完整的放在 attempt_completion 工具中。    
 
@@ -91,16 +88,7 @@ spec:
         action: continue
         # conversation_id: "${steps.design_solution.outputs.conversation_id}"
       with:
-        user_input: |
-          
-          ${vars.query}
-          下面是可能相关的文件：
-          ${steps.gather_context.outputs.attempt_raw}
-          
-          下面是详细的修改设计
-          ${steps.design_solution.outputs.attempt_raw}
-          
-          ---
+        user_input: |                    
           请按照设计方案实现代码。
       outputs:
         attempt_raw: "${attempt_result}"
@@ -113,7 +101,7 @@ spec:
         action: continue
       with:
         user_input: |          
-          帮我 reivew 下当前代码，当前实现是否符合设计预期
+          帮我 reivew 下当前代码，看当前实现是否符合设计预期。
       outputs:
         attempt_raw: "${attempt_result}"
         conversation_id: "${conversation_id}"

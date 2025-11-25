@@ -1,6 +1,6 @@
 
 ---
-name: review
+name: reviewer
 description: reivew the code changes use git
 tools: "*"
 model: "openrouter/openai/gpt-5"
