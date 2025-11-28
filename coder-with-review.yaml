@@ -38,7 +38,7 @@ spec:
   steps:                      # 有向无环依赖（DAG），按拓扑顺序执行
     - id: gather_context
       agent: context
-      replicas: 2             # 并行执行2个副本，提高上下文发现的覆盖率
+      replicas: 1             # 并行执行副本
       conversation:           # 仅保留 action，可选：conversation_id 支持模板
         action: new
       with:                   # 传给 TerminalRunner 的输入，将作为 AgenticEditRequest.user_input
